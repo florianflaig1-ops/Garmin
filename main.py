@@ -210,3 +210,51 @@ Erstelle mein morgendliches Briefing:
 @app.get("/")
 def health_check():
     return {"status": "running"}
+from fastapi.responses import Response
+
+@app.get("/download-sleep-csv")
+def download_sleep_csv():
+    """Lädt alle Schlaf- und Wellness-Daten seit 2024 als CSV herunter."""
+    auth = ("API_KEY", INTERVALS_API_KEY)
+    
+    # Holt die Daten von 2024 bis heute
+    url = f"https://intervals.icu/api/v1/athlete/{ATHLETE_ID}/wellness?oldest=2024-01-01&newest=2026-10-31"
+    r = requests.get(url, auth=auth, timeout=30)
+    
+    if r.status_code != 200:
+        return {"error": "Abruf fehlgeschlagen", "status_code": r.status_code}
+    
+    data = r.json()
+    if not data:
+        return {"error": "Keine Daten vorhanden"}
+    
+    # CSV-Kopfzeile
+    header = [
+        "Datum", "Schlaf_Dauer_Std", "Schlaf_Score", 
+        "Tiefschlaf_Std", "REM_Schlaf_Std", "Leichtschlaf_Std", 
+        "Ruhepuls", "HFV_ms", "Stress"
+    ]
+    lines = [";".join(header)]
+    
+    # Zeilen zusammenbauen
+    for d in data:
+        datum = d.get("id", "")  # id ist in intervals das Datum (YYYY-MM-DD)
+        dur = round(d.get("sleepSecs", 0) / 3600, 2) if d.get("sleepSecs") else ""
+        score = d.get("sleepScore", "")
+        deep = round(d.get("deepSleepSecs", 0) / 3600, 2) if d.get("deepSleepSecs") else ""
+        rem = round(d.get("remSleepSecs", 0) / 3600, 2) if d.get("remSleepSecs") else ""
+        light = round(d.get("lightSleepSecs", 0) / 3600, 2) if d.get("lightSleepSecs") else ""
+        rhr = d.get("restingHR", "")
+        hrv = d.get("hrv", "")
+        stress = d.get("stress", "")
+        
+        lines.append(f"{datum};{dur};{score};{deep};{rem};{light};{rhr};{hrv};{stress}")
+        
+    csv_content = "\n".join(lines)
+    
+    # Als herunterladbare Datei zurückgeben
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=schlafdaten_historisch.csv"}
+    )
